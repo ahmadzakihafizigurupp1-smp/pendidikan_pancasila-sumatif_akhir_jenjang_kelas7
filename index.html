@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CBT Pendidikan Pancasila Kls 7</title>
+    <!-- React 18 & Babel -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* CSS Anti Copy-Paste & Selection */
+        .no-select {
+            user-select: none;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+        }
+        /* Custom Scrollbar */
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 10px; }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800 no-select">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useCallback } = React;
+
+        // ==========================================
+        // KONFIGURASI APLIKASI
+        // ==========================================
+        const GOOGLE_SHEETS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbziywNff_JRKbxR-Q_9k57XzX2fh7giN6ar657e7_Bp4PRGtk1QYGwnn1O_xHI9sOJvpg/exec";
+        const STORAGE_KEY = "cbt_PENDIDIKAN_PANCASILA_VII";
+        const EXAM_DURATION_MINUTES = 90;
+        
+        // ==========================================
+        // ICON KOMPONEN (Menggantikan Lucide CDN Eksternal agar 100% Aman)
+        // ==========================================
+        const IconUser = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>;
+        const IconClock = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>;
+        const IconAlert = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" x2="12" y1="9" y2="13"/><line x1="12" x2="12.01" y1="17" y2="17"/></svg>;
+        const IconCheck = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>;
+
+        // ==========================================
+        // KOMPONEN MODAL GLOBAL (Anti-Flicker)
+        // ==========================================
+        const CustomModal = ({ isOpen, type, message, onConfirm, onCancel }) => {
+            if (!isOpen) return null;
+            return (
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+                    <div className="bg-white p-6 rounded-xl shadow-2xl max-w-md w-full mx-4 animate-bounce-in">
+                        <div className="flex flex-col items-center text-center">
+                            <div className="mb-4">
+                                {type === 'alert' ? <IconAlert /> : <IconCheck />}
+                            </div>
+                            <h2 className={`text-xl font-bold mb-2 ${type === 'alert' ? 'text-red-600' : 'text-blue-600'}`}>
+                                {type === 'alert' ? 'Peringatan!' : 'Konfirmasi'}
+                            </h2>
+                            <p className="text-gray-700 mb-6">{message}</p>
+                            <div className="flex gap-4 w-full">
+                                {type === 'confirm' && (
+                                    <button onClick={onCancel} className="flex-1 bg-gray-200 text-gray-800 py-2 rounded-lg font-semibold hover:bg-gray-300">
+                                        Batal
+                                    </button>
+                                )}
+                                <button onClick={onConfirm} className={`flex-1 py-2 rounded-lg font-semibold text-white ${type === 'alert' ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'}`}>
+                                    {type === 'alert' ? 'Mengerti' : 'Ya, Kumpulkan'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // ==========================================
+        // DATABASE SOAL
+        // ==========================================
+        const rawQuestions = [
+            // --- Pilihan Ganda (40 Soal) ---
+            { id: 1, type: 'mc', text: "Indonesia merupakan negara yang terdiri atas pulau-pulau besar ataupun pulau pulau kecil. hal ini sesuai dengan pernyataan UUD 1945 pasal ...", options: [{ text: "25A", isCorrect: true }, { text: "20A", isCorrect: false }, { text: "24A", isCorrect: false }, { text: "26A", isCorrect: false }] },
+            { id: 2, type: 'mc', text: "Bangsa Indonesia disebut negara yang memiliki keragaman dalam berbagai bidang. Kondisi tersebut menjadikan bangsa Indonesia disebut sebagai bangsa yang ...", options: [{ text: "Majemuk", isCorrect: true }, { text: "Tunggal", isCorrect: false }, { text: "Terpisah", isCorrect: false }, { text: "Besar", isCorrect: false }] },
+            { id: 3, type: 'mc', text: "Kebiasaan suatu masyarakat yang menjadi kebiasaan turun temurun disebut...", options: [{ text: "Budaya", isCorrect: true }, { text: "Hobby", isCorrect: false }, { text: "Sejarah", isCorrect: false }, { text: "Legenda", isCorrect: false }] },
+            { id: 4, type: 'mc', text: "Kerja bakti membersihkan lingkungan di komplek perumahan adalah tindakan yang menunjukkan hidup rukun di lingkungan ...", options: [{ text: "di masyarakat", isCorrect: true }, { text: "di sekolah", isCorrect: false }, { text: "di keluarga", isCorrect: false }, { text: "di negara", isCorrect: false }] },
+            { id: 5, type: 'mc', text: "Salah satu hal yang harus dipupuk dalam membina sikap saling hormat menghormati dalam kehidupan beragama adalah ...", options: [{ text: "Toleransi antar umat beragama", isCorrect: true }, { text: "Bersifat reaktif dan menyerang", isCorrect: false }, { text: "Tolong menolong hanya bagi yang seagama saja", isCorrect: false }, { text: "Suka berdebat dan memaksakan pendapat orang lain", isCorrect: false }] },
+            { id: 6, type: 'mc', text: "Sikap yang harus dihindari dalam keberagaman ras agar tidak terjadi konflik di dalam masyarakat adalah ...", options: [{ text: "Diskriminasi", isCorrect: true }, { text: "Toleransi", isCorrect: false }, { text: "Tenggang rasa", isCorrect: false }, { text: "Kedudukan yang sama", isCorrect: false }] },
+            { id: 7, type: 'mc', text: "Yang bertanggung jawab untuk menjaga kerukunan saat di rumah adalah ...", options: [{ text: "semua anggota keluarga", isCorrect: true }, { text: "ayah dan ibu", isCorrect: false }, { text: "kakak dan adik", isCorrect: false }, { text: "kakek dan nenek", isCorrect: false }] },
+            { id: 8, type: 'mc', text: "Istilah Bhinneka Tunggal Ika berasal dari kitab Sutasoma karangan ...", options: [{ text: "Mpu Tantular", isCorrect: true }, { text: "Mpu Sedah", isCorrect: false }, { text: "Mpu Prapanca", isCorrect: false }, { text: "Mpu Panuluh", isCorrect: false }] },
+            { id: 9, type: 'mc', text: "Bhinneka Tunggal Ika dalam Pancasila dituangkan dalam sila ...", options: [{ text: "Ketiga", isCorrect: true }, { text: "Pertama", isCorrect: false }, { text: "Kedua", isCorrect: false }, { text: "Keempat", isCorrect: false }] },
+            { id: 10, type: 'mc', text: "BPUPKI melaksanakan rapat di Gedung Chuo Sangi yang sekarang di kenal dengan nama Gedung ...", options: [{ text: "Pancasila", isCorrect: true }, { text: "Garuda", isCorrect: false }, { text: "Proklamasi", isCorrect: false }, { text: "Perumusan Pancasila", isCorrect: false }] },
+            { id: 11, type: 'mc', text: "Pancasila yang dinyatakan resmi rumusanya terdapat dalam ...", options: [{ text: "Pembukaan UUD 1945", isCorrect: true }, { text: "UUD 1945", isCorrect: false }, { text: "Sidang BPUPKI", isCorrect: false }, { text: "Jakarta Carter", isCorrect: false }] },
+            { id: 12, type: 'mc', text: "Jaminan kehidupan masyarakat yang berbhinneka Tunggal Ika tercantum dalam pembukaan UUD 1945 alenia ...", options: [{ text: "Keempat", isCorrect: true }, { text: "Pertama", isCorrect: false }, { text: "Kedua", isCorrect: false }, { text: "Ketiga", isCorrect: false }] },
+            { id: 13, type: 'mc', text: "Sesuai dengan batang tubuh UUD 1945 pasal 1 ayat (1), Negara Indonesia ialah negara ...", options: [{ text: "Kesatuan", isCorrect: true }, { text: "Perserikatan", isCorrect: false }, { text: "Persemakmuran", isCorrect: false }, { text: "Kepulauan", isCorrect: false }] },
+            { id: 14, type: 'mc', text: "Semboyan Bhinneka Tunggal Ika menjadi sangat penting ditengah keberagaman masyarakat untuk dipahami, dihayati dan dilaksanakan nilai-nilainya. Hal tersebut untuk mewujudkan kehidupan masyarakat yang...", options: [{ text: "Selaras, Serasi dan Seimbang", isCorrect: true }, { text: "Kuat, Mampu dan Merdeka", isCorrect: false }, { text: "Maju, Bebas, dan Kuat", isCorrect: false }, { text: "Merdeka, Kuat, dan Adidaya", isCorrect: false }] },
+            { id: 15, type: 'mc', text: "Menganggap suku bangsa sendiri lebih maju, unggul, dan baik disebut sifat ...", options: [{ text: "Chauvinisme", isCorrect: true }, { text: "Ekstrimisme", isCorrect: false }, { text: "Sekularisme", isCorrect: false }, { text: "Primordialisme", isCorrect: false }] },
+            { id: 16, type: 'mc', text: "Dibawah ini yang bukan termasuk nilai-nilai budaya untuk mempersatukan bangsa Indonesia adalah ...", options: [{ text: "Rasisme", isCorrect: true }, { text: "Gotong royong", isCorrect: false }, { text: "Toleransi", isCorrect: false }, { text: "Tenggang rasa", isCorrect: false }] },
+            { id: 17, type: 'mc', text: "Panitia Sembilan dalam sidangnya pada tanggal 22 juni 1945 menghasilkan ...", options: [{ text: "Piagam Jakarta", isCorrect: true }, { text: "Pembukaan UUD", isCorrect: false }, { text: "Undang-Undang dasar", isCorrect: false }, { text: "Pancasila", isCorrect: false }] },
+            { id: 18, type: 'mc', text: "Sikap positif kita terhadap peraturan perundangan dapat mendukung pribadi kita dalam menerapkan ...", options: [{ text: "Kedispilinan", isCorrect: true }, { text: "Keinginan", isCorrect: false }, { text: "Keadilan", isCorrect: false }, { text: "Kesadaran", isCorrect: false }] },
+            { id: 19, type: 'mc', text: "Perilaku toleran dalam berbagai aspek kehidupan dapat memperkuat ...", options: [{ text: "Integrasi bangsa", isCorrect: true }, { text: "Disintegrasi bangsa", isCorrect: false }, { text: "Sifat rasisme", isCorrect: false }, { text: "Rasa kedaerahan", isCorrect: false }] },
+            { id: 20, type: 'mc', text: "Manusia adalah mahluk yang selalu ingin bergaul dan perkumpul dengan sesamanya (zoon politicon). Pendapat tersebut dikemukakan oleh...", options: [{ text: "Aristoteles", isCorrect: true }, { text: "Aniximandros", isCorrect: false }, { text: "Plato", isCorrect: false }, { text: "Socrates", isCorrect: false }] },
+            { id: 21, type: 'mc', text: "Perhatikan pernyataan-pernyataan berikut.\n(1) Perbedaan kondisi alam.\n(2) Kondisi negara kepulauan.\n(3) Mekanisasi dan modernisasi.\n(4) Norma kesusilaan dan hukum.\n(5) Letak strategis wilayah Indonesia.\nFaktor-faktor yang memengaruhi keberagaman masyarakat Indonesia ditunjukkan oleh pernyataan nomor....", options: [{ text: "(1), (2), dan (5)", isCorrect: true }, { text: "(1), (2), dan (3)", isCorrect: false }, { text: "(2), (3), dan (5)", isCorrect: false }, { text: "(3), (4), dan (5)", isCorrect: false }] },
+            { id: 22, type: 'mc', text: "Sikap masyarakat terhadap perubahan memengaruhi keberagaman masyarakat Indonesia. Salah satu faktor eksternal yang menyebabkan terjadinya perubahan di dalam masyarakat adalah....", options: [{ text: "kontak kebudayaan dengan masyarakat lain", isCorrect: true }, { text: "perubahan jumlah penduduk", isCorrect: false }, { text: "penemuan-penemuan baru", isCorrect: false }, { text: "pertentangan atau konflik", isCorrect: false }] },
+            { id: 23, type: 'mc', text: "Setiap daerah memiliki kebudayaan yang berbeda. Keberagaman budaya ini terjadi karena ....", options: [{ text: "setiap daerah memiliki kondisi alam yang berbeda", isCorrect: true }, { text: "Indonesia adalah negara hukum", isCorrect: false }, { text: "adat istiadat yang lazim ditaati dan dilakukan sejak dahulu kala", isCorrect: false }, { text: "bangsa Indonesia mengedepankan adanya perbedaan", isCorrect: false }] },
+            { id: 24, type: 'mc', text: "Sebagai bentuk partisipasi untuk mewujudkan persatuan dalam keberagaman, kita hendaknya ....", options: [{ text: "menghargai keberagaman yang ada di dalam masyarakat", isCorrect: true }, { text: "berusaha untuk menyeragamkan masyarakat", isCorrect: false }, { text: "meniadakan keberagaman dalam masyarakat", isCorrect: false }, { text: "menerapkan budaya daerah sendiri di mana pun kita berada", isCorrect: false }] },
+            { id: 25, type: 'mc', text: "HOTS Perhatikan pernyataan-pernyataan berikut.\n(1) Menghormati perbedaan adat dan tradisi.\n(2) Tidak merendahkan kepercayaan yang berbeda.\n(3) Tidak mencibir perbedaan logat berbicara seseorang.\n(4) Tidak menganggap hanya tradisi sukunya yang baik.\n(5) Semua orang berhak untuk mendapatkan pendidikan.\nPernyataan yang mencerminkan sikap toleransi dalam berbudaya ditunjukkan oleh nomor....", options: [{ text: "(1), (2), dan (3)", isCorrect: true }, { text: "(1), (3), dan (4)", isCorrect: false }, { text: "(2), (3), dan (5)", isCorrect: false }, { text: "(3), (4), dan (5)", isCorrect: false }] },
+            { id: 26, type: 'mc', text: "Di era digital ini, hampir seluruh masyarakat Indonesia menggunakan media sosial. Berikut ini yang bukan termasuk upaya yang dapat dilakukan untuk memperkuat persatuan dan kesatuan dengan menggunakan media sosial adalah....", options: [{ text: "membagikan tiap informasi melalui media sosial tanpa peduli kredibilitasnya", isCorrect: true }, { text: "menggunakan media sosial untuk menyebarkan pesan persatuan", isCorrect: false }, { text: "memanfaatkan internet untuk mempelajari dan memahami keberagaman", isCorrect: false }, { text: "memeriksa kembali kebenaran sebuah berita sebelum menyebarkannya", isCorrect: false }] },
+            { id: 27, type: 'mc', text: "Kita dapat menunjukkan semangat persatuan dan kesatuan melalui sikap cinta tanah air. Berikut ini yang bukan contoh sikap cinta tanah air adalah....", options: [{ text: "menggandrungi kebudayaan K-pop", isCorrect: true }, { text: "bangga menggunakan produk buatan Indonesia", isCorrect: false }, { text: "mematuhi peraturan lalu lintas", isCorrect: false }, { text: "tidak menyebarkan hoaks", isCorrect: false }] },
+            { id: 28, type: 'mc', text: "Sikap yang menunjukkan semangat Bhinneka Tunggal Ika dalam bernegara adalah....", options: [{ text: "mengikuti festival budaya dari berbagai daerah", isCorrect: true }, { text: "berpartisipasi dalam kegiatan pemilihan umum", isCorrect: false }, { text: "mengakui suku bangsanya sendiri yang paling baik", isCorrect: false }, { text: "tidak memilih pemimpin yang berbeda adat budaya", isCorrect: false }] },
+            { id: 29, type: 'mc', text: "Berikut ini contoh sikap toleran terhadap keberagaman suku adalah....", options: [{ text: "Mau bersahabat dengan siswa baru di sekolahnya meskipun mereka memiliki tradisi yang berbeda.", isCorrect: true }, { text: "Mengucilkan teman yang memiliki warna rambut yang berbeda.", isCorrect: false }, { text: "Mentertawai teman yang menyukai makanan tradisional daerahnya.", isCorrect: false }, { text: "Mengejek teman yang memiliki logat bicara yang berbeda dengannya.", isCorrect: false }] },
+            { id: 30, type: 'mc', text: "Pada Pasal 36A UUD NRI Tahun 1945 dinyatakan bahwa \"Lambang Negara ialah Garuda Pancasila dengan semboyan Bhinneka Tunggal Ika\". Bhinneka Tunggal Ika merupakan semboyan bagi bangsa Indonesia. Semboyan ini menggambarkan....", options: [{ text: "masyarakat yang bersatu dalam keberagaman", isCorrect: true }, { text: "masyarakat yang demokratis di bawah konsep rule of law", isCorrect: false }, { text: "masyarakat yang adil dan makmur", isCorrect: false }, { text: "masyarakat yang sejahtera", isCorrect: false }] },
+            { id: 31, type: 'mc', text: "Bacalah teks berikut:\nPada liburan akhir semester, Diana yang berasal dari Sleman, diajak ayahnya berkunjung ke rumah Pak Tigor di Pulau Samosir... Dari diskusi antara Diana dan Putri (anak Pak Tigor) tentang adat istiadat, mereka sepakat ada perbedaan, namun juga menemukan kesamaan seperti gotong royong.\n\nBerdasarkan ilustrasi tersebut, kegiatan diskusi memperlihatkan prinsip semboyan Bhinneka Tunggal Ika, yaitu prinsip....", options: [{ text: "konvergen", isCorrect: true }, { text: "inklusif", isCorrect: false }, { text: "divergen", isCorrect: false }, { text: "solidaritas", isCorrect: false }] },
+            { id: 32, type: 'mc', text: "Dalam wacana di atas dikatakan bahwa Diana sangat menghargai dan menghormati adat istiadat dalam acara pernikahan tersebut. Sikap Diana sejalan dengan salah satu prinsip semboyan Bhinneka Tunggal Ika, yaitu prinsip....", options: [{ text: "inklusif", isCorrect: true }, { text: "divergen", isCorrect: false }, { text: "formalistis", isCorrect: false }, { text: "common denominator", isCorrect: false }] },
+            { id: 33, type: 'mc', text: "Bangsa terbentuk karena adanya hasrat bersatu. Hasrat itu timbul karena adanya rasa kesatuan antara manusia dan tempat tinggalnya. Pandangan ini disampaikan oleh....", options: [{ text: "Ernest Renan", isCorrect: true }, { text: "Hans Kohn", isCorrect: false }, { text: "Otto Bauer", isCorrect: false }, { text: "F. Ratzel", isCorrect: false }] },
+            { id: 34, type: 'mc', text: "Dalam membentuk suatu negara, ada unsur-unsur penting yang harus dipenuhi... Berikut ini yang termasuk unsur deklaratif pembentukan negara adalah....", options: [{ text: "pengakuan dari negara lain", isCorrect: true }, { text: "rakyat", isCorrect: false }, { text: "wilayah", isCorrect: false }, { text: "pemerintahan yang berdaulat", isCorrect: false }] },
+            { id: 35, type: 'mc', text: "Melalui Deklarasi Djuanda Indonesia hendak menyatakan jati dirinya sebagai negara....", options: [{ text: "kepulauan", isCorrect: true }, { text: "bahari", isCorrect: false }, { text: "agraris", isCorrect: false }, { text: "maritim", isCorrect: false }] },
+            { id: 36, type: 'mc', text: "Area laut di luar dan berdampingan dengan laut teritorial Indonesia yang lebarnya 200 mil laut diukur dari garis pangkal tempat lebar laut teritorial diukur disebut....", options: [{ text: "zona ekonomi eksklusif", isCorrect: true }, { text: "zona tambahan", isCorrect: false }, { text: "perairan kepulauan", isCorrect: false }, { text: "perairan pedalaman", isCorrect: false }] },
+            { id: 37, type: 'mc', text: "Suatu negara memiliki kedaulatan atas wilayah udaranya sampai batas yang dibutuhkan untuk menjaga keamanan negara itu. Hal ini sesuai dengan teori....", options: [{ text: "ruang udara (Schachter)", isCorrect: true }, { text: "keamanan", isCorrect: false }, { text: "udara bebas", isCorrect: false }, { text: "pengawasan Cooper", isCorrect: false }] },
+            { id: 38, type: 'mc', text: "Indonesia pernah menjadi negara federal. Hal ini merupakan hasil kesepakatan....", options: [{ text: "Konferensi Meja Bundar", isCorrect: true }, { text: "Perundingan Roem-Royen", isCorrect: false }, { text: "Perundingan Linggajati", isCorrect: false }, { text: "Perundingan Renville", isCorrect: false }] },
+            { id: 39, type: 'mc', text: "\"Khusus mengenai bentuk Negara Kesatuan Republik Indonesia tidak dapat dilakukan perubahan.\" Hal ini dinyatakan dalam UUD NRI Tahun 1945, yaitu pada Pasal....", options: [{ text: "37 Ayat (5)", isCorrect: true }, { text: "25A", isCorrect: false }, { text: "1 Ayat (1)", isCorrect: false }, { text: "18 Ayat (1)", isCorrect: false }] },
+            { id: 40, type: 'mc', text: "Melihat kesulitan yang dihadapi oleh Safitri yang sepedanya bocor, Astikawati bersedia menemani Safitri membawa sepeda ke bengkel dengan tulus hati. Sikap Astikawati merupakan salah satu contoh sikap yang dapat menjaga keutuhan wilayah. Sikap yang dimaksud adalah sikap....", options: [{ text: "rela berkorban", isCorrect: true }, { text: "kerja keras", isCorrect: false }, { text: "mandiri", isCorrect: false }, { text: "jujur", isCorrect: false }] },
+            
+            // --- Isian Singkat (10 Soal) ---
+            { id: 41, type: 'short', text: "Kerja sama yang dilakukan hanya antara dua negara disebut kerja sama ...", correctAnswer: "bilateral" },
+            { id: 42, type: 'short', text: "Menyeberang jalan melalui zebra cross sebaiknya dilakukan sesuai dengan ...", correctAnswer: "aturan" },
+            { id: 43, type: 'short', text: "Tokoh yang mengetik naskah Proklamasi Kemerdekaan Indonesia adalah ...", correctAnswer: "sayuti melik" },
+            { id: 44, type: 'short', text: "Pemilihan presiden, wakil presiden, dan wakil rakyat merupakan contoh kerja sama dalam bidang ...", correctAnswer: "politik" },
+            { id: 45, type: 'short', text: "Dalam kehidupan bernegara, norma yang dianggap paling tegas adalah norma ...", correctAnswer: "hukum" },
+            { id: 46, type: 'short', text: "Semboyan bangsa Indonesia yang berarti \"berbeda-beda tetapi tetap satu\" adalah ...", correctAnswer: "bhinneka tunggal ika" },
+            { id: 47, type: 'short', text: "Salah satu faktor penyebab keberagaman masyarakat Indonesia adalah perbedaan ...", correctAnswer: "suku" }, // Bisa agama, ras, kondisi alam
+            { id: 48, type: 'short', text: "Kerja sama dalam masyarakat penting untuk menciptakan kehidupan yang ...", correctAnswer: "rukun" }, // Bisa damai, harmonis
+            { id: 49, type: 'short', text: "Contoh kerja sama yang sering dilakukan masyarakat di lingkungan sekitar adalah ...", correctAnswer: "gotong royong" },
+            { id: 50, type: 'short', text: "Pemerintah daerah berperan penting dalam menjaga keutuhan Negara Kesatuan Republik Indonesia atau disingkat ...", correctAnswer: "pemda" }
+        ];
+
+        // ==========================================
+        // ALGORITMA SHUFFLE (FISHER-YATES)
+        // ==========================================
+        const shuffleArray = (array) => {
+            const arr = [...array];
+            for (let i = arr.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [arr[i], arr[j]] = [arr[j], arr[i]];
+            }
+            return arr;
+        };
+
+        const generateShuffledExam = () => {
+            const shuffledQ = shuffleArray(rawQuestions);
+            return shuffledQ.map(q => {
+                if (q.type === 'mc') {
+                    return { ...q, options: shuffleArray(q.options) };
+                }
+                return q;
+            });
+        };
+
+        // ==========================================
+        // KOMPONEN UTAMA
+        // ==========================================
+        const App = () => {
+            const [appState, setAppState] = useState('LOGIN'); // LOGIN, RESUME, EXAM, RESULT
+            const [student, setStudent] = useState({ name: '', class: '', date: new Date().toISOString().split('T')[0] });
+            const [examData, setExamData] = useState({
+                questions: [],
+                answers: {}, // { questionId: selectedValue }
+                timeLeft: EXAM_DURATION_MINUTES * 60,
+                violations: 0
+            });
+            const [currentIdx, setCurrentIdx] = useState(0);
+            const [isSubmitting, setIsSubmitting] = useState(false);
+            const [finalScore, setFinalScore] = useState(0);
+
+            // Modal State
+            const [modal, setModal] = useState({ isOpen: false, type: 'alert', message: '', onConfirm: null, onCancel: null });
+            
+            // Refs untuk Anti-Cheat agar mendapat nilai state terbaru di Event Listener
+            const examDataRef = useRef(examData);
+            const appStateRef = useRef(appState);
+            const isSubmittingRef = useRef(isSubmitting);
+
+            useEffect(() => {
+                examDataRef.current = examData;
+                appStateRef.current = appState;
+                isSubmittingRef.current = isSubmitting;
+                
+                // Auto Save ke LocalStorage setiap kali examData berubah
+                if (appState === 'EXAM') {
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify({ student, examData }));
+                }
+            }, [examData, appState, student, isSubmitting]);
+
+            // Cek Sesi Sebelumnya saat pertama dimuat
+            useEffect(() => {
+                const savedSession = localStorage.getItem(STORAGE_KEY);
+                if (savedSession) {
+                    setAppState('RESUME');
+                }
+            }, []);
+
+            const showModal = useCallback((type, message, onConfirm = null, onCancel = null) => {
+                setModal({
+                    isOpen: true,
+                    type,
+                    message,
+                    onConfirm: () => {
+                        setModal(prev => ({ ...prev, isOpen: false }));
+                        if (onConfirm) onConfirm();
+                    },
+                    onCancel: () => {
+                        setModal(prev => ({ ...prev, isOpen: false }));
+                        if (onCancel) onCancel();
+                    }
+                });
+            }, []);
+
+            // ==========================================
+            // LOGIKA ANTI-CHEAT (Fullscreen & Blur)
+            // ==========================================
+            const triggerViolation = useCallback((reason) => {
+                if (appStateRef.current !== 'EXAM' || isSubmittingRef.current) return;
+
+                const currentV = examDataRef.current.violations + 1;
+                setExamData(prev => ({ ...prev, violations: currentV }));
+
+                if (currentV === 1) {
+                    showModal('alert', `PERINGATAN 1: ${reason} Jika diulangi, ujian akan otomatis diakhiri dan dikumpulkan!`);
+                } else if (currentV >= 2) {
+                    showModal('alert', `PELANGGARAN 2: ${reason} Ujian dihentikan paksa!`);
+                    setTimeout(() => handleSubmit(true), 2000); // Paksa kumpul
+                }
+            }, [showModal]);
+
+            useEffect(() => {
+                const handleVisibility = () => {
+                    if (document.hidden && appStateRef.current === 'EXAM' && !modal.isOpen) {
+                        triggerViolation("Terdeteksi berpindah Tab/Aplikasi lain.");
+                    }
+                };
+                const handleFullscreen = () => {
+                    if (!document.fullscreenElement && appStateRef.current === 'EXAM' && !modal.isOpen) {
+                        triggerViolation("Terdeteksi keluar dari Mode Layar Penuh (Fullscreen).");
+                    }
+                };
+
+                document.addEventListener('visibilitychange', handleVisibility);
+                document.addEventListener('fullscreenchange', handleFullscreen);
+
+                return () => {
+                    document.removeEventListener('visibilitychange', handleVisibility);
+                    document.removeEventListener('fullscreenchange', handleFullscreen);
+                };
+            }, [triggerViolation, modal.isOpen]);
+
+            // ==========================================
+            // LOGIKA TIMER
+            // ==========================================
+            useEffect(() => {
+                let timerId;
+                if (appState === 'EXAM' && examData.timeLeft > 0 && !isSubmitting) {
+                    timerId = setInterval(() => {
+                        setExamData(prev => {
+                            if (prev.timeLeft <= 1) {
+                                clearInterval(timerId);
+                                showModal('alert', 'Waktu ujian telah habis!', () => handleSubmit(true));
+                                return { ...prev, timeLeft: 0 };
+                            }
+                            return { ...prev, timeLeft: prev.timeLeft - 1 };
+                        });
+                    }, 1000);
+                }
+                return () => clearInterval(timerId);
+            }, [appState, isSubmitting, showModal]);
+
+            const formatTime = (seconds) => {
+                const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+                const s = (seconds % 60).toString().padStart(2, '0');
+                return `${m}:${s}`;
+            };
+
+            // ==========================================
+            // PENGELOLAAN UJIAN (Mulai, Lanjut, Jawab)
+            // ==========================================
+            const startExam = async () => {
+                if (!student.name || !student.class) {
+                    showModal('alert', 'Silakan lengkapi Nama dan Kelas terlebih dahulu.');
+                    return;
+                }
+                
+                try {
+                    if (document.documentElement.requestFullscreen) {
+                        await document.documentElement.requestFullscreen();
+                    }
+                } catch (e) {
+                    console.log("Fullscreen request diabaikan oleh browser");
+                }
+
+                setExamData({
+                    questions: generateShuffledExam(),
+                    answers: {},
+                    timeLeft: EXAM_DURATION_MINUTES * 60,
+                    violations: 0
+                });
+                setAppState('EXAM');
+            };
+
+            const resumeExam = async () => {
+                const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
+                setStudent(saved.student);
+                setExamData(saved.examData);
+                try {
+                    if (document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen();
+                } catch (e) { }
+                setAppState('EXAM');
+            };
+
+            const restartExam = () => {
+                localStorage.removeItem(STORAGE_KEY);
+                setAppState('LOGIN');
+            };
+
+            const handleAnswer = (questionId, answerValue) => {
+                setExamData(prev => ({
+                    ...prev,
+                    answers: { ...prev.answers, [questionId]: answerValue }
+                }));
+            };
+
+            // ==========================================
+            // PENILAIAN & PENGIRIMAN DATA
+            // ==========================================
+            const handleSubmit = (force = false) => {
+                const submitProcess = async () => {
+                    setIsSubmitting(true);
+                    
+                    // Hitung Skor (Pilihan Ganda 2 poin, Isian Singkat 2 poin = Total Maks 100)
+                    let totalScore = 0;
+                    const { questions, answers } = examDataRef.current;
+                    
+                    questions.forEach(q => {
+                        const userAnswer = answers[q.id];
+                        if (!userAnswer) return;
+
+                        if (q.type === 'mc') {
+                            const selectedOption = q.options.find(opt => opt.text === userAnswer);
+                            if (selectedOption && selectedOption.isCorrect) {
+                                totalScore += 2;
+                            }
+                        } else if (q.type === 'short') {
+                            if (userAnswer.toLowerCase().trim() === q.correctAnswer.toLowerCase()) {
+                                totalScore += 2;
+                            }
+                        }
+                    });
+
+                    setFinalScore(totalScore);
+
+                    // Payload JSON
+                    const payload = {
+                        nama: student.name,
+                        kelas: student.class,
+                        tanggal: student.date,
+                        skor: totalScore,
+                        pelanggaran: examDataRef.current.violations,
+                        keterangan: force ? "Selesai Otomatis (Waktu/Pelanggaran)" : "Selesai Normal",
+                        debug: JSON.stringify(answers)
+                    };
+
+                    try {
+                        await fetch(GOOGLE_SHEETS_WEB_APP_URL, {
+                            method: 'POST',
+                            mode: 'no-cors',
+                            headers: { 'Content-Type': 'text/plain' },
+                            body: JSON.stringify(payload)
+                        });
+                        // Sukses
+                        if (document.fullscreenElement) {
+                            document.exitFullscreen().catch(err => console.log(err));
+                        }
+                        localStorage.removeItem(STORAGE_KEY);
+                        setAppState('RESULT');
+                    } catch (error) {
+                        showModal('alert', 'Gagal mengirim data. Pastikan internet Anda terhubung.');
+                        setIsSubmitting(false);
+                    }
+                };
+
+                if (force) {
+                    submitProcess();
+                } else {
+                    showModal(
+                        'confirm', 
+                        'Apakah Anda yakin ingin mengumpulkan ujian ini? Pastikan semua soal telah terjawab.',
+                        submitProcess
+                    );
+                }
+            };
+
+            // ==========================================
+            // RENDER HALAMAN
+            // ==========================================
+            if (appState === 'LOGIN') {
+                return (
+                    <div className="min-h-screen bg-gradient-to-br from-blue-900 to-blue-600 flex items-center justify-center p-4">
+                        <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full">
+                            <div className="text-center mb-8">
+                                <h1 className="text-3xl font-bold text-gray-800 mb-2">Portal CBT</h1>
+                                <p className="text-blue-600 font-medium">Pendidikan Pancasila - Kelas VII</p>
+                            </div>
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Nama Lengkap</label>
+                                    <input type="text" value={student.name} onChange={e => setStudent({...student, name: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none" placeholder="Masukkan nama lengkap" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Kelas</label>
+                                    <input type="text" value={student.class} onChange={e => setStudent({...student, class: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none" placeholder="Contoh: VII-A" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Tanggal Ujian</label>
+                                    <input type="date" value={student.date} onChange={e => setStudent({...student, date: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none" />
+                                </div>
+                                <button onClick={startExam} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg mt-6 transition duration-200">
+                                    Mulai Ujian
+                                </button>
+                                <p className="text-xs text-center text-red-500 mt-4">
+                                    *Pastikan menggunakan perangkat dengan baterai penuh. Anda akan masuk ke mode layar penuh.
+                                </p>
+                            </div>
+                        </div>
+                        <CustomModal {...modal} />
+                    </div>
+                );
+            }
+
+            if (appState === 'RESUME') {
+                return (
+                    <div className="min-h-screen bg-gradient-to-br from-blue-900 to-blue-600 flex items-center justify-center p-4">
+                        <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full text-center">
+                            <IconUser className="w-16 h-16 text-blue-500 mx-auto mb-4" />
+                            <h2 className="text-2xl font-bold text-gray-800 mb-2">Sesi Ujian Ditemukan!</h2>
+                            <p className="text-gray-600 mb-6">Kami mendeteksi Anda belum menyelesaikan ujian sebelumnya.</p>
+                            <div className="space-y-3">
+                                <button onClick={resumeExam} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition duration-200">
+                                    Lanjutkan Ujian
+                                </button>
+                                <button onClick={restartExam} className="w-full bg-red-100 hover:bg-red-200 text-red-700 font-bold py-3 px-4 rounded-lg transition duration-200">
+                                    Mulai Ulang (Hapus Progres)
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            if (appState === 'EXAM') {
+                const currentQuestion = examData.questions[currentIdx];
+                
+                return (
+                    <div className="h-screen flex flex-col bg-gray-50">
+                        {/* Header */}
+                        <header className="bg-white shadow-sm border-b px-6 py-3 flex justify-between items-center z-10">
+                            <div className="flex items-center gap-4">
+                                <div className="hidden md:block">
+                                    <div className="font-bold text-gray-800 text-lg">{student.name}</div>
+                                    <div className="text-sm text-gray-500">Kelas: {student.class}</div>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-6">
+                                <div className={`flex items-center gap-2 px-4 py-2 rounded-full font-bold text-lg ${examData.timeLeft < 300 ? 'bg-red-100 text-red-600 animate-pulse' : 'bg-blue-50 text-blue-700'}`}>
+                                    <IconClock /> {formatTime(examData.timeLeft)}
+                                </div>
+                                <button onClick={() => handleSubmit(false)} disabled={isSubmitting} className="bg-green-500 hover:bg-green-600 text-white px-5 py-2 rounded-lg font-bold shadow transition">
+                                    Selesai & Kumpul
+                                </button>
+                            </div>
+                        </header>
+
+                        {/* Main Body */}
+                        <main className="flex-1 flex overflow-hidden">
+                            {/* Kiri: Grid Navigasi */}
+                            <div className="w-80 bg-white border-r shadow-sm flex flex-col hidden lg:flex">
+                                <div className="p-4 border-b bg-gray-50 font-bold text-center text-gray-700">
+                                    Navigasi Soal
+                                </div>
+                                <div className="p-4 flex-1 overflow-y-auto custom-scrollbar">
+                                    <div className="grid grid-cols-5 gap-2">
+                                        {examData.questions.map((q, i) => {
+                                            const isAnswered = !!examData.answers[q.id];
+                                            const isCurrent = i === currentIdx;
+                                            let btnClass = "h-10 w-10 rounded-lg text-sm font-semibold border flex items-center justify-center transition ";
+                                            
+                                            if (isCurrent) {
+                                                btnClass += "ring-2 ring-offset-1 ring-blue-500 bg-blue-500 text-white border-blue-500";
+                                            } else if (isAnswered) {
+                                                btnClass += "bg-blue-100 text-blue-800 border-blue-300";
+                                            } else {
+                                                btnClass += "bg-white text-gray-500 border-gray-300 hover:bg-gray-100";
+                                            }
+
+                                            return (
+                                                <button key={i} onClick={() => setCurrentIdx(i)} className={btnClass}>
+                                                    {i + 1}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                                <div className="p-4 border-t text-sm flex gap-4 justify-center bg-gray-50 text-gray-600">
+                                    <div className="flex items-center gap-1"><div className="w-3 h-3 bg-white border rounded"></div> Belum</div>
+                                    <div className="flex items-center gap-1"><div className="w-3 h-3 bg-blue-100 border border-blue-300 rounded"></div> Sudah</div>
+                                </div>
+                            </div>
+
+                            {/* Kanan: Area Soal */}
+                            <div className="flex-1 p-6 overflow-y-auto custom-scrollbar">
+                                <div className="bg-white rounded-xl shadow-sm border p-8 max-w-4xl mx-auto">
+                                    <div className="flex items-start gap-4 mb-6">
+                                        <div className="bg-blue-600 text-white font-bold rounded-lg w-10 h-10 flex items-center justify-center shrink-0 text-xl">
+                                            {currentIdx + 1}
+                                        </div>
+                                        <div className="text-lg text-gray-800 pt-1 leading-relaxed whitespace-pre-wrap">
+                                            {currentQuestion.text}
+                                        </div>
+                                    </div>
+
+                                    <div className="pl-14">
+                                        {currentQuestion.type === 'mc' ? (
+                                            <div className="space-y-3">
+                                                {currentQuestion.options.map((opt, i) => {
+                                                    const isSelected = examData.answers[currentQuestion.id] === opt.text;
+                                                    // Generate label A, B, C, D
+                                                    const label = String.fromCharCode(65 + i);
+                                                    return (
+                                                        <label key={i} className={`flex items-center gap-4 p-4 rounded-xl border cursor-pointer transition ${isSelected ? 'bg-blue-50 border-blue-500 ring-1 ring-blue-500' : 'border-gray-200 hover:bg-gray-50'}`}>
+                                                            <input 
+                                                                type="radio" 
+                                                                name={`q-${currentQuestion.id}`} 
+                                                                className="w-5 h-5 text-blue-600"
+                                                                checked={isSelected}
+                                                                onChange={() => handleAnswer(currentQuestion.id, opt.text)}
+                                                            />
+                                                            <div className="flex items-start gap-2">
+                                                                <span className="font-bold text-gray-500">{label}.</span>
+                                                                <span className="text-gray-700">{opt.text}</span>
+                                                            </div>
+                                                        </label>
+                                                    );
+                                                })}
+                                            </div>
+                                        ) : (
+                                            <div className="mt-4">
+                                                <input 
+                                                    type="text" 
+                                                    className="w-full border-2 border-gray-300 rounded-lg p-4 text-lg focus:border-blue-500 focus:ring-0 outline-none"
+                                                    placeholder="Ketik jawaban singkat Anda di sini..."
+                                                    value={examData.answers[currentQuestion.id] || ''}
+                                                    onChange={(e) => handleAnswer(currentQuestion.id, e.target.value)}
+                                                />
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Navigasi Prev / Next */}
+                                    <div className="flex justify-between mt-10 border-t pt-6">
+                                        <button 
+                                            onClick={() => setCurrentIdx(prev => Math.max(0, prev - 1))}
+                                            disabled={currentIdx === 0}
+                                            className="px-6 py-2 rounded-lg font-semibold bg-gray-200 text-gray-700 disabled:opacity-50 hover:bg-gray-300"
+                                        >
+                                            &larr; Sebelumnya
+                                        </button>
+                                        <button 
+                                            onClick={() => setCurrentIdx(prev => Math.min(examData.questions.length - 1, prev + 1))}
+                                            disabled={currentIdx === examData.questions.length - 1}
+                                            className="px-6 py-2 rounded-lg font-semibold bg-blue-100 text-blue-700 disabled:opacity-50 hover:bg-blue-200"
+                                        >
+                                            Selanjutnya &rarr;
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </main>
+                        
+                        {/* Modal Overlay untuk Loading Submit / Peringatan / Konfirmasi */}
+                        {isSubmitting && (
+                            <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-white/80 backdrop-blur-sm">
+                                <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 mb-4"></div>
+                                <p className="text-xl font-bold text-gray-800">Mengirim Jawaban...</p>
+                            </div>
+                        )}
+                        <CustomModal {...modal} />
+                    </div>
+                );
+            }
+
+            if (appState === 'RESULT') {
+                return (
+                    <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
+                        <div className="bg-white rounded-2xl shadow-xl p-10 max-w-lg w-full text-center">
+                            <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                                <IconCheck />
+                            </div>
+                            <h1 className="text-3xl font-bold text-gray-800 mb-2">Ujian Selesai!</h1>
+                            <p className="text-gray-600 mb-8">Terima kasih, data jawaban Anda telah berhasil disimpan di server.</p>
+                            
+                            <div className="bg-gray-50 border rounded-xl p-6 mb-8 text-left">
+                                <div className="flex justify-between mb-2">
+                                    <span className="text-gray-500 font-medium">Nama</span>
+                                    <span className="font-bold text-gray-800">{student.name}</span>
+                                </div>
+                                <div className="flex justify-between mb-2">
+                                    <span className="text-gray-500 font-medium">Kelas</span>
+                                    <span className="font-bold text-gray-800">{student.class}</span>
+                                </div>
+                                <div className="flex justify-between mb-2">
+                                    <span className="text-gray-500 font-medium">Pelanggaran</span>
+                                    <span className={`font-bold ${examData.violations > 0 ? 'text-red-500' : 'text-green-500'}`}>
+                                        {examData.violations} kali
+                                    </span>
+                                </div>
+                                <div className="flex justify-between pt-4 mt-4 border-t border-gray-200">
+                                    <span className="text-gray-800 font-bold">Skor Akhir</span>
+                                    <span className="font-bold text-2xl text-blue-600">{finalScore} / 100</span>
+                                </div>
+                            </div>
+
+                            <button onClick={() => window.location.reload()} className="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-6 rounded-lg">
+                                Kembali ke Beranda
+                            </button>
+                        </div>
+                    </div>
+                );
+            }
+
+            return null;
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
